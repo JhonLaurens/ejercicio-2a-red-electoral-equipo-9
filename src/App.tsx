@@ -62,7 +62,8 @@ function computeModularitySimple(
 }
 
 export default function App() {
-  const logoDark = "/assets/logo_dark_theme.png";
+  const logoDark = new URL("../assets/logo_dark_theme.png", import.meta.url)
+    .href;
 
   const [nodos, setNodos] = useState<Nodo[]>([]);
   const [aristas, setAristas] = useState<Arista[]>([]);
