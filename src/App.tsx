@@ -12,10 +12,14 @@ import {
   AlertTriangle,
   BarChart3,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   GitMerge,
   Info,
   LayoutDashboard,
+  Maximize2,
+  Minimize2,
   Settings,
   Users,
   Zap,
@@ -25,6 +29,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { NetworkGraph } from "./components/NetworkGraph";
 import {
   Arista,
+  BridgeRankingEntry,
   CommunityInfo,
   DemographicComparison,
   GraphMetrics,
@@ -81,7 +86,9 @@ export default function App() {
   const [minWeight, setMinWeight] = useState(50);
   const [resolution, setResolution] = useState(1.0);
   const [selectedDemographic, setSelectedDemographic] = useState("Todas");
-  const [removedNodeId, setRemovedNodeId] = useState<string | undefined>();
+  const [removedNodeIds, setRemovedNodeIds] = useState<Set<string>>(new Set());
+  const [removedNodesList, setRemovedNodesList] = useState<BridgeRankingEntry[]>([]);
+  const [baselineMetrics, setBaselineMetrics] = useState<{ components: number; modularity: number; nodes: number } | null>(null);
   const [compareMode, setCompareMode] = useState(false);
   const [activeTab, setActiveTab] = useState<
     "overview" | "communities" | "bridges" | "demographics" | "compare"
@@ -102,6 +109,9 @@ export default function App() {
   const [compareCommunities, setCompareCommunities] = useState<CommunityInfo[]>(
     [],
   );
+
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isGraphFullscreen, setIsGraphFullscreen] = useState(false);
 
   const [sidebarSection, setSidebarSection] = useState({
     params: true,
@@ -160,8 +170,11 @@ export default function App() {
     (m: GraphMetrics, c: CommunityInfo[]) => {
       setMetrics(m);
       setCommunities(c);
+      if (removedNodeIds.size === 0) {
+        setBaselineMetrics({ components: m.components, modularity: m.modularity, nodes: m.nodes });
+      }
     },
-    [],
+    [removedNodeIds],
   );
 
   const handleCompareMetrics = useCallback(
@@ -170,6 +183,45 @@ export default function App() {
       setCompareCommunities(c);
     },
     [],
+  );
+
+  const handleRemoveNode = useCallback(
+    (entry: BridgeRankingEntry) => {
+      setRemovedNodeIds((prev: Set<string>) => new Set([...prev, entry.nodeId]));
+      setRemovedNodesList((prev: BridgeRankingEntry[]) => [...prev, entry]);
+    },
+    [],
+  );
+
+  const handleRestoreNode = useCallback(
+    (nodeId: string) => {
+      setRemovedNodeIds((prev: Set<string>) => {
+        const next = new Set(prev);
+        next.delete(nodeId);
+        return next;
+      });
+      setRemovedNodesList((prev: BridgeRankingEntry[]) =>
+        prev.filter((n: BridgeRankingEntry) => n.nodeId !== nodeId),
+      );
+    },
+    [],
+  );
+
+  const handleRestoreAll = useCallback(() => {
+    setRemovedNodeIds(new Set());
+    setRemovedNodesList([]);
+  }, []);
+
+  const getFragmentationLevel = useCallback(
+    (currentComponents: number): string => {
+      if (!baselineMetrics || baselineMetrics.components === 0) return "-";
+      const ratio = currentComponents / baselineMetrics.components;
+      if (ratio <= 1.2) return "Baja";
+      if (ratio <= 2.0) return "Media";
+      if (ratio <= 3.0) return "Alta";
+      return "Critica";
+    },
+    [baselineMetrics],
   );
 
   // Calcula los datos comparativos para cada franja demográfica.
@@ -276,27 +328,38 @@ export default function App() {
   return (
     <div className="flex h-screen bg-slate-100 text-slate-800 font-sans overflow-hidden">
       {/* Sidebar principal de controles y filtros. */}
-      <div className="w-80 bg-white border-r border-slate-200 flex flex-col shadow-sm z-20 flex-shrink-0">
+      <div className={`bg-white border-r border-slate-200 flex flex-col shadow-sm z-20 flex-shrink-0 transition-all duration-300 ${isSidebarCollapsed ? "w-12" : "w-80"} ${isGraphFullscreen ? "hidden" : ""}`}>
         <div className="p-5 border-b border-slate-200 bg-gradient-to-r from-blue-600 to-indigo-600">
           <div className="flex items-center gap-3">
-            <img
-              src={logoDark}
-              alt="Logo institucional"
-              className="h-11 w-auto rounded-md bg-white/10 p-1 ring-1 ring-white/20"
-            />
-            <div>
-              <h1 className="text-lg font-bold text-white flex items-center gap-2">
-                <LayoutDashboard className="w-5 h-5" />
-                Red Electoral 2026
-              </h1>
-              <p className="text-blue-100 text-xs mt-1">
-                Ejercicio 2A - Mapa de Afinidades
-              </p>
-            </div>
+            {!isSidebarCollapsed && (
+              <>
+                <img
+                  src={logoDark}
+                  alt="Logo institucional"
+                  className="h-11 w-auto rounded-md bg-white/10 p-1 ring-1 ring-white/20"
+                />
+                <div className="flex-1">
+                  <h1 className="text-lg font-bold text-white flex items-center gap-2">
+                    <LayoutDashboard className="w-5 h-5" />
+                    Red Electoral 2026
+                  </h1>
+                  <p className="text-blue-100 text-xs mt-1">
+                    Ejercicio 2A - Mapa de Afinidades
+                  </p>
+                </div>
+              </>
+            )}
+            <button
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="p-1 rounded hover:bg-white/20 text-white transition-colors flex-shrink-0"
+              title={isSidebarCollapsed ? "Expandir sidebar" : "Colapsar sidebar"}
+            >
+              {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            </button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className={`flex-1 overflow-y-auto ${isSidebarCollapsed ? "hidden" : ""}`}>
           {/* Network Params */}
           <section className="border-b border-slate-100">
             <button
@@ -415,21 +478,22 @@ export default function App() {
               <div className="px-4 pb-4">
                 <div className="bg-amber-50 p-3 rounded-lg border border-amber-100">
                   <p className="text-[10px] text-amber-800 mb-2">
-                    Haz clic en un nodo del grafo para eliminarlo y observar
-                    como cambia la cohesion de la red.
+                    Ve a la pestana <b>Puentes</b> para gestionar nodos puente
+                    interactivamente.
                   </p>
-                  {removedNodeId ? (
-                    <div className="flex items-center justify-between bg-white p-2 rounded border border-amber-200">
-                      <span className="text-xs font-medium text-slate-700 truncate mr-2">
-                        {nodos.find((n) => n.node_id === removedNodeId)
-                          ?.nombre || removedNodeId}
-                      </span>
-                      <button
-                        onClick={() => setRemovedNodeId(undefined)}
-                        className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-700 px-2 py-1 rounded transition-colors font-medium"
-                      >
-                        Restaurar
-                      </button>
+                  {removedNodesList.length > 0 ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-medium text-amber-700">
+                          {removedNodesList.length} nodo(s) removido(s)
+                        </span>
+                        <button
+                          onClick={handleRestoreAll}
+                          className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-700 px-2 py-1 rounded transition-colors font-medium"
+                        >
+                          Restaurar todos
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="text-xs text-slate-400 italic text-center p-1.5">
@@ -563,14 +627,47 @@ export default function App() {
           </section>
         </div>
 
-        {/* Sidebar Footer */}
-        <div className="p-3 border-t border-slate-100 text-[10px] text-slate-400 text-center">
-          Estrella=Candidato | Circulo=Depto | Diamante=Franja | Cuadrado=Medio
-        </div>
+        {!isSidebarCollapsed && (
+          <div className="p-3 border-t border-slate-100 text-[10px] text-slate-400 text-center">
+            Estrella=Candidato | Circulo=Depto | Diamante=Franja | Cuadrado=Medio
+          </div>
+        )}
       </div>
 
+      {/* Fullscreen overlay */}
+      {isGraphFullscreen && (
+        <div className="fixed inset-0 z-50 bg-slate-100">
+          <button
+            onClick={() => setIsGraphFullscreen(false)}
+            className="absolute top-3 right-3 z-[60] bg-white/90 hover:bg-white p-2 rounded-lg shadow border border-slate-200 transition-colors"
+            title="Salir de pantalla completa"
+          >
+            <Minimize2 className="w-5 h-5 text-slate-600" />
+          </button>
+          <div className="w-full h-full">
+            <NetworkGraph
+              nodos={nodos}
+              aristas={aristas}
+              minWeight={minWeight}
+              resolution={resolution}
+              selectedDemographic={selectedDemographic}
+              removedNodeIds={removedNodeIds}
+              onNodeClick={(node: any) => {
+                if (activeTab === "bridges") {
+                  const entry = metrics?.bridgeRanking.find(
+                    (b) => b.nodeId === node.id,
+                  );
+                  if (entry) handleRemoveNode(entry);
+                }
+              }}
+              onMetricsChange={handleMainMetrics}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Main Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className={`flex-1 flex flex-col overflow-hidden ${isGraphFullscreen ? "hidden" : ""}`}>
         {/* Barra superior de métricas resumidas del grafo actual. */}
         {metrics && (
           <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-6 flex-shrink-0">
@@ -638,17 +735,20 @@ export default function App() {
                 bloques de afinidad.
               </NarrativeBlock>
               <div className="flex gap-4 flex-1 min-h-0">
-                <div className="flex-[2] min-h-0">
+                <div className="flex-[2] min-h-0 relative">
                   <NetworkGraph
                     nodos={nodos}
                     aristas={aristas}
                     minWeight={minWeight}
                     resolution={resolution}
                     selectedDemographic={selectedDemographic}
-                    removedNodeId={removedNodeId}
-                    onNodeClick={(node) => setRemovedNodeId(node.id)}
+                    removedNodeIds={removedNodeIds}
+                    onNodeClick={() => {}}
                     onMetricsChange={handleMainMetrics}
                   />
+                  <button onClick={() => setIsGraphFullscreen(true)} className="absolute top-2 right-2 z-10 bg-white/90 hover:bg-white p-1.5 rounded-lg shadow border border-slate-200 transition-colors" title="Pantalla completa">
+                    <Maximize2 className="w-4 h-4 text-slate-500" />
+                  </button>
                 </div>
                 <div className="flex-1 overflow-auto space-y-3">
                   <PanelCard title="Lectura rapida">
@@ -719,17 +819,20 @@ export default function App() {
                 ajustar la resolucion, se modula la granularidad: valores altos
                 fragmentan comunidades grandes en subclusters mas finos.
               </NarrativeBlock>
-              <div className="flex-1 min-h-0">
+              <div className="flex-1 min-h-0 relative">
                 <NetworkGraph
                   nodos={nodos}
                   aristas={aristas}
                   minWeight={minWeight}
                   resolution={resolution}
                   selectedDemographic={selectedDemographic}
-                  removedNodeId={removedNodeId}
-                  onNodeClick={(node) => setRemovedNodeId(node.id)}
+                  removedNodeIds={removedNodeIds}
+                  onNodeClick={() => {}}
                   onMetricsChange={handleMainMetrics}
                 />
+                <button onClick={() => setIsGraphFullscreen(true)} className="absolute top-2 right-2 z-10 bg-white/90 hover:bg-white p-1.5 rounded-lg shadow border border-slate-200 transition-colors" title="Pantalla completa">
+                  <Maximize2 className="w-4 h-4 text-slate-500" />
+                </button>
               </div>
               {communities.length > 0 && (
                 <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
@@ -788,75 +891,145 @@ export default function App() {
               >
                 La <b>Centralidad de Intermediacion</b> mide con que frecuencia
                 un nodo se encuentra en el camino mas corto entre cualquier par
-                de actores. Un nodo con alta intermediacion opera como corredor
-                critico: conecta comunidades que de otro modo estarian aisladas.
-                En el contexto electoral, estos puentes pueden ser departamentos
-                swing, medios de cobertura transversal o candidatos de centro
-                que capturan audiencias de multiples bloques ideologicos.
-                Haz clic en un nodo puente resaltado para eliminarlo y ver el
-                efecto en la red.
+                de actores. Haz clic en un nodo de la lista para eliminarlo y
+                observar como se fragmenta la red. Haz clic en un nodo removido
+                para restaurarlo.
               </NarrativeBlock>
-              <div className="flex-1 min-h-0">
-                <NetworkGraph
-                  nodos={nodos}
-                  aristas={aristas}
-                  minWeight={minWeight}
-                  resolution={resolution}
-                  selectedDemographic={selectedDemographic}
-                  removedNodeId={removedNodeId}
-                  onNodeClick={(node) => setRemovedNodeId(node.id)}
-                  onMetricsChange={handleMainMetrics}
-                />
-              </div>
-              {removedNodeId && metrics && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                  <h3 className="text-sm font-semibold text-amber-800 mb-2 flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4" />
-                    Prueba de estres: nodo "
-                    {nodos.find((n) => n.node_id === removedNodeId)?.nombre}"
-                    removido
-                  </h3>
-                  <div className="grid grid-cols-4 gap-4">
-                    <div className="text-center">
-                      <div className="text-lg font-bold text-amber-900">
-                        {metrics.nodes}
-                      </div>
-                      <div className="text-[10px] text-amber-600">
-                        Nodos restantes
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-lg font-bold text-amber-900">
-                        {metrics.communities}
-                      </div>
-                      <div className="text-[10px] text-amber-600">
-                        Comunidades
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-lg font-bold text-amber-900">
-                        {metrics.modularity.toFixed(3)}
-                      </div>
-                      <div className="text-[10px] text-amber-600">
-                        Modularidad
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-lg font-bold text-amber-900">
-                        {metrics.components}
-                      </div>
-                      <div className="text-[10px] text-amber-600">
-                        Componentes
-                      </div>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-amber-700 mt-2">
-                    Si la red se fragmenta significativamente, indica alta
-                    dependencia en este intermediario. Haz clic en "Restaurar"
-                    en la barra lateral para revertir.
-                  </p>
+              <div className="flex gap-4 flex-1 min-h-0">
+                <div className="flex-[2] min-h-0 relative">
+                  <NetworkGraph
+                    nodos={nodos}
+                    aristas={aristas}
+                    minWeight={minWeight}
+                    resolution={resolution}
+                    selectedDemographic={selectedDemographic}
+                    removedNodeIds={removedNodeIds}
+                    onNodeClick={(node: any) => {
+                      const entry = metrics?.bridgeRanking.find(
+                        (b) => b.nodeId === node.id,
+                      );
+                      if (entry) handleRemoveNode(entry);
+                    }}
+                    onMetricsChange={handleMainMetrics}
+                  />
+                  <button onClick={() => setIsGraphFullscreen(true)} className="absolute top-2 right-2 z-10 bg-white/90 hover:bg-white p-1.5 rounded-lg shadow border border-slate-200 transition-colors" title="Pantalla completa">
+                    <Maximize2 className="w-4 h-4 text-slate-500" />
+                  </button>
                 </div>
-              )}
+                <div className="flex-1 overflow-auto space-y-3">
+                  <PanelCard title="Top 5 Nodos Puente">
+                    {metrics?.bridgeRanking && metrics.bridgeRanking.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {metrics.bridgeRanking.map((entry, i) => (
+                          <button
+                            key={entry.nodeId}
+                            onClick={() => handleRemoveNode(entry)}
+                            className="w-full flex items-center gap-2 p-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg cursor-pointer transition-colors text-left"
+                          >
+                            <span className="text-xs font-bold text-amber-700 w-5">
+                              #{i + 1}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <span className="text-xs font-medium text-slate-700 block truncate">
+                                {entry.name}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                {entry.tipo} | {entry.score.toFixed(4)}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-amber-500 flex-shrink-0">
+                              Eliminar
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic text-center py-2">
+                        No hay nodos puente en el grafo actual.
+                      </p>
+                    )}
+                  </PanelCard>
+
+                  {removedNodesList.length > 0 && (
+                    <PanelCard title="Nodos Removidos">
+                      <div className="space-y-1.5">
+                        {removedNodesList.map((entry) => (
+                          <button
+                            key={entry.nodeId}
+                            onClick={() => handleRestoreNode(entry.nodeId)}
+                            className="w-full flex items-center gap-2 p-2 bg-slate-100 hover:bg-green-50 border border-slate-200 hover:border-green-300 rounded-lg cursor-pointer transition-colors text-left"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <span className="text-xs font-medium text-slate-500 line-through block truncate">
+                                {entry.name}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                {entry.tipo} | {entry.score.toFixed(4)}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-green-600 flex-shrink-0">
+                              Restaurar
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        onClick={handleRestoreAll}
+                        className="w-full mt-2 text-[10px] bg-slate-200 hover:bg-slate-300 text-slate-600 px-3 py-1.5 rounded transition-colors font-medium"
+                      >
+                        Restaurar todos
+                      </button>
+                    </PanelCard>
+                  )}
+
+                  {removedNodesList.length > 0 && metrics && baselineMetrics && (
+                    <PanelCard title="Impacto acumulado">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="text-center p-2 bg-amber-50 rounded border border-amber-100">
+                          <div className="text-sm font-bold text-amber-900">
+                            {removedNodesList.length} / {baselineMetrics.nodes}
+                          </div>
+                          <div className="text-[10px] text-amber-600">
+                            Nodos removidos
+                          </div>
+                        </div>
+                        <div className="text-center p-2 bg-amber-50 rounded border border-amber-100">
+                          <div className="text-sm font-bold text-amber-900">
+                            {baselineMetrics.components} → {metrics.components}
+                          </div>
+                          <div className="text-[10px] text-amber-600">
+                            Componentes
+                          </div>
+                        </div>
+                        <div className="text-center p-2 bg-amber-50 rounded border border-amber-100">
+                          <div className="text-sm font-bold text-amber-900">
+                            {baselineMetrics.modularity.toFixed(3)} →{" "}
+                            {metrics.modularity.toFixed(3)}
+                            <span className="ml-1 text-[10px]">
+                              {metrics.modularity > baselineMetrics.modularity
+                                ? "▲"
+                                : metrics.modularity < baselineMetrics.modularity
+                                  ? "▼"
+                                  : "="}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-amber-600">
+                            Modularidad
+                          </div>
+                        </div>
+                        <div className="text-center p-2 bg-amber-50 rounded border border-amber-100">
+                          <div className="text-sm font-bold text-amber-900">
+                            {getFragmentationLevel(metrics.components)}
+                          </div>
+                          <div className="text-[10px] text-amber-600">
+                            Fragmentacion
+                          </div>
+                        </div>
+                      </div>
+                    </PanelCard>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -874,17 +1047,20 @@ export default function App() {
                   mayor cohesion (modularidad)?
                 </i>
               </NarrativeBlock>
-              <div className="flex-1 min-h-0">
+              <div className="flex-1 min-h-0 relative">
                 <NetworkGraph
                   nodos={nodos}
                   aristas={aristas}
                   minWeight={minWeight}
                   resolution={resolution}
                   selectedDemographic={selectedDemographic}
-                  removedNodeId={removedNodeId}
-                  onNodeClick={(node) => setRemovedNodeId(node.id)}
+                  removedNodeIds={removedNodeIds}
+                  onNodeClick={() => {}}
                   onMetricsChange={handleMainMetrics}
                 />
+                <button onClick={() => setIsGraphFullscreen(true)} className="absolute top-2 right-2 z-10 bg-white/90 hover:bg-white p-1.5 rounded-lg shadow border border-slate-200 transition-colors" title="Pantalla completa">
+                  <Maximize2 className="w-4 h-4 text-slate-500" />
+                </button>
               </div>
               <PanelCard title="Comparativa de modularidad por franja demografica">
                 <p className="text-[10px] text-slate-500 mb-2">
@@ -980,10 +1156,13 @@ export default function App() {
                     minWeight={minWeight}
                     resolution={resolution}
                     selectedDemographic={selectedDemographic}
-                    removedNodeId={removedNodeId}
-                    onNodeClick={(node) => setRemovedNodeId(node.id)}
+                    removedNodeIds={removedNodeIds}
+                    onNodeClick={() => {}}
                     onMetricsChange={handleMainMetrics}
                   />
+                  <button onClick={() => setIsGraphFullscreen(true)} className="absolute top-2 left-2 z-10 bg-white/90 hover:bg-white p-1.5 rounded-lg shadow border border-slate-200 transition-colors" title="Pantalla completa">
+                    <Maximize2 className="w-4 h-4 text-slate-500" />
+                  </button>
                 </div>
                 {compareMode && (
                   <div className="flex-1 relative min-h-0">
@@ -998,8 +1177,8 @@ export default function App() {
                       algorithm={compareAlgorithm}
                       targetCommunities={compareTargetCommunities}
                       selectedDemographic={selectedDemographic}
-                      removedNodeId={removedNodeId}
-                      onNodeClick={(node) => setRemovedNodeId(node.id)}
+                      removedNodeIds={removedNodeIds}
+                      onNodeClick={() => {}}
                       onMetricsChange={handleCompareMetrics}
                     />
                   </div>

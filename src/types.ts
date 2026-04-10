@@ -26,6 +26,13 @@ export interface Arista {
   nota: string;
 }
 
+export interface BridgeRankingEntry {
+  nodeId: string;
+  name: string;
+  tipo: string;
+  score: number;
+}
+
 export interface GraphMetrics {
   nodes: number;
   edges: number;
@@ -35,6 +42,7 @@ export interface GraphMetrics {
   components: number;
   avgDegree: number;
   topBridge: { name: string; score: number } | null;
+  bridgeRanking: BridgeRankingEntry[];
 }
 
 export interface CommunityInfo {
