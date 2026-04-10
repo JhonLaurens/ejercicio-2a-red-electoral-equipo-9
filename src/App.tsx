@@ -78,7 +78,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   // Parámetros de filtro y visualización de la red.
-  const [minWeight, setMinWeight] = useState(5);
+  const [minWeight, setMinWeight] = useState(50);
   const [resolution, setResolution] = useState(1.0);
   const [selectedDemographic, setSelectedDemographic] = useState("Todas");
   const [removedNodeId, setRemovedNodeId] = useState<string | undefined>();
@@ -793,6 +793,8 @@ export default function App() {
                 En el contexto electoral, estos puentes pueden ser departamentos
                 swing, medios de cobertura transversal o candidatos de centro
                 que capturan audiencias de multiples bloques ideologicos.
+                Haz clic en un nodo puente resaltado para eliminarlo y ver el
+                efecto en la red.
               </NarrativeBlock>
               <div className="flex-1 min-h-0">
                 <NetworkGraph

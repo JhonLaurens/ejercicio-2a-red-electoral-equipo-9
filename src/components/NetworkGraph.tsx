@@ -452,15 +452,18 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
       const betweenness = computeBetweenness(G);
       const components = countComponents(G);
 
-      // Encuentra el nodo con mayor centralidad de intermediación.
+      const sortedBridgeEntries = Object.entries(betweenness)
+        .filter(([, score]) => score > 0)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 5);
+
+      const bridgeNodeIds = new Set(sortedBridgeEntries.map(([node]) => node));
       let maxBtw = 0;
       let topBridgeId = "";
-      Object.entries(betweenness).forEach(([node, score]) => {
-        if (score > maxBtw) {
-          maxBtw = score;
-          topBridgeId = node;
-        }
-      });
+      if (sortedBridgeEntries.length > 0) {
+        topBridgeId = sortedBridgeEntries[0][0];
+        maxBtw = sortedBridgeEntries[0][1];
+      }
 
       let totalDegree = 0;
       G.forEachNode((node) => {
@@ -545,6 +548,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
           val: 3 + btwScore * 50,
           betweenness: btwScore,
           degree: G.degree(node),
+          isBridge: bridgeNodeIds.has(node),
         });
       });
 
@@ -582,11 +586,12 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
   ) => {
     const size = node.val || 5;
     const color = node.color || "#999";
+    const highlight = node.isBridge;
 
     ctx.save();
     ctx.fillStyle = color;
-    ctx.strokeStyle = "#1e293b";
-    ctx.lineWidth = 1.2 / globalScale;
+    ctx.strokeStyle = highlight ? "#f59e0b" : "#1e293b";
+    ctx.lineWidth = highlight ? 3 / globalScale : 1.2 / globalScale;
 
     if (node.tipo === "candidato") {
       drawStar(ctx, node.x, node.y, 5, size * 1.6, size * 0.7);
@@ -603,6 +608,52 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
       ctx.stroke();
     } else {
       drawDiamond(ctx, node.x, node.y, size * 1.2);
+    }
+
+    if (highlight) {
+      ctx.strokeStyle = "#f59e0b";
+      ctx.lineWidth = 4 / globalScale;
+      if (node.tipo === "candidato") {
+        ctx.beginPath();
+        let rot = (Math.PI / 2) * 3;
+        const spikes = 5;
+        const outerR = size * 2.2;
+        const innerR = size * 1.0;
+        const step = Math.PI / spikes;
+        ctx.moveTo(node.x, node.y - outerR);
+        for (let i = 0; i < spikes; i++) {
+          ctx.lineTo(
+            node.x + Math.cos(rot) * outerR,
+            node.y + Math.sin(rot) * outerR,
+          );
+          rot += step;
+          ctx.lineTo(
+            node.x + Math.cos(rot) * innerR,
+            node.y + Math.sin(rot) * innerR,
+          );
+          rot += step;
+        }
+        ctx.closePath();
+        ctx.stroke();
+      } else if (node.tipo === "departamento") {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, size + 2.5, 0, 2 * Math.PI);
+        ctx.stroke();
+      } else if (node.tipo === "medio") {
+        const s = size * 0.9 + 2.5;
+        ctx.beginPath();
+        ctx.rect(node.x - s, node.y - s, s * 2, s * 2);
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        const outer = size * 1.6;
+        ctx.moveTo(node.x, node.y - outer);
+        ctx.lineTo(node.x + outer, node.y);
+        ctx.lineTo(node.x, node.y + outer);
+        ctx.lineTo(node.x - outer, node.y);
+        ctx.closePath();
+        ctx.stroke();
+      }
     }
 
     // Muestra etiquetas solo cuando el zoom es suficientemente grande.
@@ -632,10 +683,12 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
           nodeCanvasObject={paintNode}
           nodeLabel={(node: any) =>
             `<div style="padding:4px 8px;background:#0f172a;color:#f8fafc;border-radius:6px;font-size:12px;max-width:220px">
-              <b>${node.nombre}</b><br/>
-              Tipo: ${node.tipo}<br/>
-              Comunidad: ${node.community}<br/>
-              Intermediacion: ${(node.betweenness || 0).toFixed(4)}
+              <b>${node.nombre || node.id}</b><br/>
+              Tipo: ${node.tipo || "-"}<br/>
+              Comunidad: ${node.community ?? "-"}<br/>
+              Intermediacion: ${(node.betweenness || 0).toFixed(4)}${
+                node.isBridge ? '<br/><i style="color:#facc15">Click para eliminar este puente</i>' : ''
+              }
             </div>`
           }
           onNodeClick={onNodeClick}
