@@ -1,9 +1,19 @@
+// Importaciones de librerías para el manejo de grafos, clustering y renderizado.
+// Graphology provee la estructura de grafo, louvain detecta comunidades y
+// ForceGraph2D dibuja el grafo en canvas con física de fuerzas.
 import Graph from "graphology";
 import louvain from "graphology-communities-louvain";
 import React, { useEffect, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 import { Arista, CommunityInfo, GraphMetrics, Nodo } from "../types";
 
+// Props del componente NetworkGraph:
+// - nodos/aristas: datos de entrada del grafo
+// - minWeight/resolution: filtros y parámetros de Louvain
+// - algorithm/targetCommunities: se usan para el modo comparativo
+// - selectedDemographic: franja demográfica seleccionada
+// - removedNodeId: nodo “eliminado” para análisis de puentes
+// - onMetricsChange: callback para enviar métricas al componente padre
 interface NetworkGraphProps {
   nodos: Nodo[];
   aristas: Arista[];
@@ -20,6 +30,7 @@ interface NetworkGraphProps {
   ) => void;
 }
 
+// Paleta de colores para pintar las comunidades detectadas en el grafo.
 const COLOR_PALETTE = [
   "#2563eb",
   "#dc2626",
@@ -43,6 +54,8 @@ const COLOR_PALETTE = [
   "#65a30d",
 ];
 
+// Calcula la centralidad de intermediación (betweenness) para cada nodo.
+// Usa el algoritmo de Brandes con distancias ponderadas por el peso de la arista.
 function computeBetweenness(G: Graph): Record<string, number> {
   const nodes = G.nodes();
   const n = nodes.length;
@@ -129,6 +142,8 @@ function computeBetweenness(G: Graph): Record<string, number> {
   return centrality;
 }
 
+// Calcula la modularidad de la partición de comunidades.
+// Mide la densidad interna de aristas frente a una red aleatoria equivalente.
 function computeModularity(
   G: Graph,
   communities: Record<string, number>,
@@ -163,6 +178,8 @@ function computeModularity(
   return q / twoM;
 }
 
+// Extrae los componentes conectados del grafo.
+// Cada componente representa un subgrafo en el que todos los nodos están conectados.
 function getConnectedComponents(G: Graph): string[][] {
   const visited = new Set<string>();
   const components: string[][] = [];
@@ -188,6 +205,8 @@ function getConnectedComponents(G: Graph): string[][] {
   return components;
 }
 
+// Calcula el betweenness de aristas necesario para Girvan-Newman.
+// Es la cantidad de caminos más cortos que atraviesan cada arista.
 function computeEdgeBetweenness(G: Graph): Record<string, number> {
   const result: Record<string, number> = {};
   const nodes = G.nodes();
@@ -252,6 +271,8 @@ function computeEdgeBetweenness(G: Graph): Record<string, number> {
   return result;
 }
 
+// Algoritmo de Girvan-Newman para dividir el grafo en comunidades.
+// Elimina iterativamente la arista con mayor betweenness hasta alcanzar el número deseado de componentes.
 function partitionGirvanNewman(
   G: Graph,
   targetCommunities: number,
@@ -291,6 +312,7 @@ function partitionGirvanNewman(
   return partition;
 }
 
+// Cuenta cuantos componentes conectados tiene el grafo.
 function countComponents(G: Graph): number {
   const visited = new Set<string>();
   let count = 0;
@@ -310,6 +332,8 @@ function countComponents(G: Graph): number {
   return count;
 }
 
+// Componente principal que muestra el grafo interactivo.
+// Recibe los datos, aplica filtros, calcula métricas y renderiza con ForceGraph2D.
 export const NetworkGraph: React.FC<NetworkGraphProps> = ({
   nodos,
   aristas,
@@ -330,6 +354,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
   });
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
+  // Ajusta dinámicamente el tamaño del canvas cuando cambia el contenedor.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -345,11 +370,14 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
     return () => observer.disconnect();
   }, []);
 
+  // Reconstruye el grafo cada vez que cambian los datos o filtros.
   useEffect(() => {
     if (!nodos.length || !aristas.length) return;
 
     const G = new Graph({ multi: false, type: "undirected" });
 
+    // Si se seleccionó una franja demográfica, reduce el grafo a candidatos,
+    // departamentos y esa franja específica.
     let validNodeIds = new Set(nodos.map((n) => n.node_id));
     if (selectedDemographic && selectedDemographic !== "Todas") {
       const demoNode = nodos.find((n) => n.nombre === selectedDemographic);
@@ -367,16 +395,19 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
       }
     }
 
+    // Si hay un nodo eliminado, excluirlo del grafo para simular el análisis de puentes.
     if (removedNodeId) {
       validNodeIds.delete(removedNodeId);
     }
 
+    // Agrega los nodos válidos al grafo.
     nodos.forEach((n) => {
       if (validNodeIds.has(n.node_id)) {
         G.addNode(n.node_id, { ...n });
       }
     });
 
+    // Agrega aristas que superen el umbral de peso mínimo.
     aristas.forEach((a) => {
       if (validNodeIds.has(a.origen) && validNodeIds.has(a.destino)) {
         if (Number(a.peso) >= minWeight) {
@@ -387,10 +418,12 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
       }
     });
 
+    // Elimina nodos aislados sin conexiones.
     G.forEachNode((node) => {
       if (G.degree(node) === 0) G.dropNode(node);
     });
 
+    // Si el grafo quedó vacío después de filtrar, emitir métricas vacías.
     if (G.order === 0) {
       setGraphData({ nodes: [], links: [] });
       onMetricsChange?.(
@@ -410,6 +443,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
     }
 
     try {
+      // Detecta comunidades usando Louvain o Girvan-Newman.
       const communities =
         algorithm === "louvain"
           ? louvain(G, { resolution })
@@ -418,6 +452,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
       const betweenness = computeBetweenness(G);
       const components = countComponents(G);
 
+      // Encuentra el nodo con mayor centralidad de intermediación.
       let maxBtw = 0;
       let topBridgeId = "";
       Object.entries(betweenness).forEach(([node, score]) => {
@@ -435,6 +470,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
       const density =
         G.order > 1 ? (2 * G.size) / (G.order * (G.order - 1)) : 0;
 
+      // Agrupa los nodos por comunidad para generar información adicional.
       const communityNodes: Record<number, string[]> = {};
       Object.entries(communities).forEach(([node, cid]) => {
         if (!communityNodes[cid]) communityNodes[cid] = [];
@@ -479,6 +515,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
         ? G.getNodeAttributes(topBridgeId).nombre || topBridgeId
         : "";
 
+      // Envía métricas de la configuración actual al componente padre.
       onMetricsChange?.(
         {
           nodes: G.order,
@@ -495,6 +532,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
         communityInfos,
       );
 
+      // Construye la lista de nodos y enlaces para el renderizador ForceGraph2D.
       const gNodes: any[] = [];
       G.forEachNode((node, attributes) => {
         const comm = communities[node];
@@ -536,6 +574,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
     targetCommunities,
   ]);
 
+  // Dibuja cada nodo en canvas usando diferentes símbolos según su tipo.
   const paintNode = (
     node: any,
     ctx: CanvasRenderingContext2D,
@@ -566,6 +605,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
       drawDiamond(ctx, node.x, node.y, size * 1.2);
     }
 
+    // Muestra etiquetas solo cuando el zoom es suficientemente grande.
     if (globalScale > 1.2) {
       const fontSize = Math.max(10 / globalScale, 2);
       ctx.font = `bold ${fontSize}px Inter, system-ui, sans-serif`;
@@ -582,6 +622,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
       ref={containerRef}
       className="relative w-full h-full bg-slate-50 rounded-xl overflow-hidden border border-slate-200 shadow-inner"
     >
+      {/* Si hay datos, renderiza el grafo interactivo; si no, muestra un mensaje de filtro. */}
       {graphData.nodes.length > 0 ? (
         <ForceGraph2D
           ref={fgRef}
@@ -642,6 +683,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
   );
 };
 
+// Dibuja una estrella de 5 puntas para representar a los candidatos.
 function drawStar(
   ctx: CanvasRenderingContext2D,
   cx: number,
@@ -666,6 +708,7 @@ function drawStar(
   ctx.stroke();
 }
 
+// Dibuja un rombo para representar franjas demográficas.
 function drawDiamond(
   ctx: CanvasRenderingContext2D,
   cx: number,
