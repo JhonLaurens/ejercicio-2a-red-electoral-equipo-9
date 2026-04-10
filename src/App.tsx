@@ -3,6 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// Importaciones de librerias externas y tipos del proyecto.
+// Graphology se usa para manipular grafos, Louvain para detección de comunidades,
+// lucide-react para iconos, PapaParse para parsear CSV, y React para el render.
 import Graph from "graphology";
 import louvain from "graphology-communities-louvain";
 import {
@@ -28,6 +31,8 @@ import {
   Nodo,
 } from "./types";
 
+// Función auxiliar para calcular una modularidad aproximada
+// a partir de un grafo y la asignación de comunidades.
 function computeModularitySimple(
   G: Graph,
   communities: Record<string, number>,
@@ -65,11 +70,15 @@ export default function App() {
   const logoDark = new URL("../assets/logo_dark_theme.png", import.meta.url)
     .href;
 
+  // Estado principal del componente:
+  // - nodos y aristas cargados desde CSV.
+  // - loading controla la pantalla de carga inicial.
   const [nodos, setNodos] = useState<Nodo[]>([]);
   const [aristas, setAristas] = useState<Arista[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [minWeight, setMinWeight] = useState(5);
+  // Parámetros de filtro y visualización de la red.
+  const [minWeight, setMinWeight] = useState(50);
   const [resolution, setResolution] = useState(1.0);
   const [selectedDemographic, setSelectedDemographic] = useState("Todas");
   const [removedNodeId, setRemovedNodeId] = useState<string | undefined>();
@@ -101,6 +110,7 @@ export default function App() {
     compare: false,
   });
 
+  // useEffect para cargar los datos de los CSV cuando se monta el componente.
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -132,6 +142,8 @@ export default function App() {
     loadData();
   }, []);
 
+  // Lista de opciones demográficas disponibles para el filtro.
+  // Se construye a partir de los nodos de tipo franja_demografica.
   const demographics = useMemo(
     () => [
       "Todas",
@@ -142,6 +154,8 @@ export default function App() {
     [nodos],
   );
 
+  // Callbacks que reciben métricas calculadas por NetworkGraph.
+  // Se usan para actualizar el panel principal y la comparación.
   const handleMainMetrics = useCallback(
     (m: GraphMetrics, c: CommunityInfo[]) => {
       setMetrics(m);
@@ -158,6 +172,9 @@ export default function App() {
     [],
   );
 
+  // Calcula los datos comparativos para cada franja demográfica.
+  // Construye un subgrafo con candidatos + departamentos + franja seleccionada
+  // y mide modularidad y número de comunidades resultantes.
   const demographicComparisons = useMemo((): DemographicComparison[] => {
     if (!nodos.length || !aristas.length) return [];
 
@@ -237,10 +254,12 @@ export default function App() {
       .sort((a, b) => b.modularity - a.modularity);
   }, [nodos, aristas, minWeight, resolution]);
 
+  // Alterna la visibilidad de secciones de la barra lateral.
   const toggleSection = (key: keyof typeof sidebarSection) => {
     setSidebarSection((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  // Mostrar pantalla de carga mientras se obtienen los datos.
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-slate-100">
@@ -256,7 +275,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-100 text-slate-800 font-sans overflow-hidden">
-      {/* Sidebar */}
+      {/* Sidebar principal de controles y filtros. */}
       <div className="w-80 bg-white border-r border-slate-200 flex flex-col shadow-sm z-20 flex-shrink-0">
         <div className="p-5 border-b border-slate-200 bg-gradient-to-r from-blue-600 to-indigo-600">
           <div className="flex items-center gap-3">
@@ -552,7 +571,7 @@ export default function App() {
 
       {/* Main Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Metrics Bar */}
+        {/* Barra superior de métricas resumidas del grafo actual. */}
         {metrics && (
           <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-6 flex-shrink-0">
             <MetricBadge label="Nodos" value={metrics.nodes} />
@@ -579,7 +598,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Tabs */}
+        {/* Pestañas para navegar entre vistas: resumen, comunidades, puentes, demografías y comparación. */}
         <div className="bg-white border-b border-slate-200 px-6 flex gap-1 flex-shrink-0">
           {[
             { key: "overview", label: "Resumen" },
@@ -605,7 +624,7 @@ export default function App() {
           ))}
         </div>
 
-        {/* Content */}
+        {/* Contenido principal según pestaña activa. */}
         <div className="flex-1 overflow-auto p-5">
           {activeTab === "overview" && (
             <div className="flex flex-col gap-4 h-full">
@@ -774,6 +793,8 @@ export default function App() {
                 En el contexto electoral, estos puentes pueden ser departamentos
                 swing, medios de cobertura transversal o candidatos de centro
                 que capturan audiencias de multiples bloques ideologicos.
+                Haz clic en un nodo puente resaltado para eliminarlo y ver el
+                efecto en la red.
               </NarrativeBlock>
               <div className="flex-1 min-h-0">
                 <NetworkGraph
@@ -1081,6 +1102,7 @@ export default function App() {
   );
 }
 
+// Componente reutilizable para mostrar un valor clave de métrica con etiqueta.
 function MetricBadge({
   label,
   value,
@@ -1108,6 +1130,7 @@ function MetricBadge({
   );
 }
 
+// Tarjeta de panel con borde y título para agrupar texto y tablas.
 function PanelCard({
   title,
   children,
@@ -1123,6 +1146,7 @@ function PanelCard({
   );
 }
 
+// Bloque de texto informativo con icono, usado para explicar el significado de cada vista.
 function NarrativeBlock({
   icon,
   children,
