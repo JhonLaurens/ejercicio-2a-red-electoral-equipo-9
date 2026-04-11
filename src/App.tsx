@@ -421,7 +421,7 @@ export default function App() {
   ]);
 
   // Invoca Gemini con el prompt contextual para la pestana activa.
-  // Utiliza la clave GEMINI_API_KEY expuesta por vite.config.ts.
+  // Prioriza VITE_GEMINI_API_KEY (estandar Vite) y mantiene fallback.
   // Se sanitiza la clave eliminando comillas/espacios residuales porque
   // dotenv puede conservarlos segun el formato del archivo .env.
   const runAiAnalysis = useCallback(async () => {
@@ -430,7 +430,8 @@ export default function App() {
     setAiError(null);
     setAiAnalysis("");
     try {
-      const rawKey = process.env.GEMINI_API_KEY;
+      const rawKey =
+        import.meta.env.VITE_GEMINI_API_KEY ?? process.env.GEMINI_API_KEY;
       const apiKey =
         typeof rawKey === "string"
           ? rawKey.trim().replace(/^['"]|['"]$/g, "")
@@ -438,7 +439,7 @@ export default function App() {
 
       if (!apiKey) {
         throw new Error(
-          "GEMINI_API_KEY no configurada. Agregue la clave en el archivo .env y reinicie el servidor Vite.",
+          "API key de Gemini no configurada. Defina VITE_GEMINI_API_KEY (o GEMINI_API_KEY) en .env para local o en Variables de Entorno de Vercel y redeploy.",
         );
       }
       if (!/^AIza[0-9A-Za-z_-]{20,}$/.test(apiKey)) {
