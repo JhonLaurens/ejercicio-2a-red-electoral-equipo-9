@@ -3,7 +3,7 @@
 // ForceGraph2D dibuja el grafo en canvas con física de fuerzas.
 import Graph from "graphology";
 import louvain from "graphology-communities-louvain";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 import { Arista, CommunityInfo, GraphMetrics, Nodo } from "../types";
 
@@ -56,7 +56,7 @@ const COLOR_PALETTE = [
 
 // Calcula la centralidad de intermediación (betweenness) para cada nodo.
 // Usa el algoritmo de Brandes con distancias ponderadas por el peso de la arista.
-function computeBetweenness(G: Graph): Record<string, number> {
+export function computeBetweenness(G: Graph): Record<string, number> {
   const nodes = G.nodes();
   const n = nodes.length;
   const centrality: Record<string, number> = {};
@@ -144,7 +144,7 @@ function computeBetweenness(G: Graph): Record<string, number> {
 
 // Calcula la modularidad de la partición de comunidades.
 // Mide la densidad interna de aristas frente a una red aleatoria equivalente.
-function computeModularity(
+export function computeModularity(
   G: Graph,
   communities: Record<string, number>,
 ): number {
@@ -180,7 +180,7 @@ function computeModularity(
 
 // Extrae los componentes conectados del grafo.
 // Cada componente representa un subgrafo en el que todos los nodos están conectados.
-function getConnectedComponents(G: Graph): string[][] {
+export function getConnectedComponents(G: Graph): string[][] {
   const visited = new Set<string>();
   const components: string[][] = [];
 
@@ -207,7 +207,7 @@ function getConnectedComponents(G: Graph): string[][] {
 
 // Calcula el betweenness de aristas necesario para Girvan-Newman.
 // Es la cantidad de caminos más cortos que atraviesan cada arista.
-function computeEdgeBetweenness(G: Graph): Record<string, number> {
+export function computeEdgeBetweenness(G: Graph): Record<string, number> {
   const result: Record<string, number> = {};
   const nodes = G.nodes();
 
@@ -273,7 +273,7 @@ function computeEdgeBetweenness(G: Graph): Record<string, number> {
 
 // Algoritmo de Girvan-Newman para dividir el grafo en comunidades.
 // Elimina iterativamente la arista con mayor betweenness hasta alcanzar el número deseado de componentes.
-function partitionGirvanNewman(
+export function partitionGirvanNewman(
   G: Graph,
   targetCommunities: number,
 ): Record<string, number> {
@@ -313,7 +313,7 @@ function partitionGirvanNewman(
 }
 
 // Cuenta cuantos componentes conectados tiene el grafo.
-function countComponents(G: Graph): number {
+export function countComponents(G: Graph): number {
   const visited = new Set<string>();
   let count = 0;
   G.forEachNode((node) => {
@@ -346,13 +346,105 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
   removedNodeId,
   onMetricsChange,
 }) => {
-  const fgRef = useRef<any>();
+  const fgRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [graphData, setGraphData] = useState<{ nodes: any[]; links: any[] }>({
     nodes: [],
     links: [],
   });
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const [hoverNode, setHoverNode] = useState<any>(null);
+  const nodeCount = graphData.nodes.length;
+  const denseLayout = nodeCount > 40;
+
+  const neighborMap = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    graphData.nodes.forEach((n) => map.set(n.id, new Set<string>()));
+
+    graphData.links.forEach((l: any) => {
+      const sourceId = typeof l.source === "object" ? l.source.id : l.source;
+      const targetId = typeof l.target === "object" ? l.target.id : l.target;
+      if (!sourceId || !targetId) return;
+      if (!map.has(sourceId)) map.set(sourceId, new Set<string>());
+      if (!map.has(targetId)) map.set(targetId, new Set<string>());
+      map.get(sourceId)?.add(targetId);
+      map.get(targetId)?.add(sourceId);
+    });
+
+    return map;
+  }, [graphData]);
+
+  // Reconfigura las fuerzas del motor D3 cada vez que cambia el grafo.
+  // Se aplica una fuerza de colision manual para evitar el solapamiento
+  // visual de nodos y se refuerzan repulsion/longitud de enlace.
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg || graphData.nodes.length === 0) return;
+
+    const nodeRadius = (node: any): number => {
+      const val = Number(node.val ?? 3);
+      return Math.sqrt(Math.max(val, 1)) * 5 + 6;
+    };
+
+    let forceNodes: any[] = [];
+    const collideForce = (alpha: number) => {
+      const iterations = 2;
+      for (let iter = 0; iter < iterations; iter++) {
+        for (let i = 0; i < forceNodes.length; i++) {
+          const a = forceNodes[i];
+          for (let j = i + 1; j < forceNodes.length; j++) {
+            const b = forceNodes[j];
+            const dx = (b.x ?? 0) - (a.x ?? 0);
+            const dy = (b.y ?? 0) - (a.y ?? 0);
+            const minDist = nodeRadius(a) + nodeRadius(b);
+            const distSq = dx * dx + dy * dy;
+            if (distSq > 0 && distSq < minDist * minDist) {
+              const dist = Math.sqrt(distSq);
+              const push = ((minDist - dist) / dist) * 0.5 * alpha;
+              const px = dx * push;
+              const py = dy * push;
+              a.x = (a.x ?? 0) - px;
+              a.y = (a.y ?? 0) - py;
+              b.x = (b.x ?? 0) + px;
+              b.y = (b.y ?? 0) + py;
+            }
+          }
+        }
+      }
+    };
+    (collideForce as any).initialize = (nodes: any[]) => {
+      forceNodes = nodes;
+    };
+
+    const charge = fg.d3Force("charge");
+    if (charge && typeof charge.strength === "function") {
+      charge.strength(denseLayout ? -520 : -340);
+      if (typeof charge.distanceMax === "function") {
+        charge.distanceMax(denseLayout ? 900 : 700);
+      }
+    }
+
+    const link = fg.d3Force("link");
+    if (link && typeof link.distance === "function") {
+      link.distance(denseLayout ? 95 : 70);
+      if (typeof link.strength === "function") link.strength(0.6);
+    }
+
+    fg.d3Force("collide", collideForce);
+
+    if (typeof fg.d3ReheatSimulation === "function") {
+      fg.d3ReheatSimulation();
+    }
+  }, [graphData, denseLayout]);
+
+  // Ajusta vista inicial para evitar grafos miniatura o fuera de encuadre.
+  useEffect(() => {
+    if (!fgRef.current || graphData.nodes.length === 0) return;
+    const timer = setTimeout(() => {
+      fgRef.current?.zoomToFit(550, 90);
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [graphData.nodes.length, dimensions.width, dimensions.height]);
 
   // Ajusta dinámicamente el tamaño del canvas cuando cambia el contenedor.
   useEffect(() => {
@@ -540,12 +632,18 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
       G.forEachNode((node, attributes) => {
         const comm = communities[node];
         const btwScore = betweenness[node] || 0;
+        // Limita tamaño para que un nodo puente extremo no tape toda la red.
+        const normalized = Math.max(0, Number(btwScore));
+        const visualSize = Math.min(
+          11.5,
+          3.8 + Math.log1p(normalized * 140) * 1.9,
+        );
         gNodes.push({
           id: node,
           ...attributes,
           community: comm,
           color: COLOR_PALETTE[comm % COLOR_PALETTE.length],
-          val: 3 + btwScore * 50,
+          val: visualSize,
           betweenness: btwScore,
           degree: G.degree(node),
           isBridge: bridgeNodeIds.has(node),
@@ -588,7 +686,18 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
     const color = node.color || "#999";
     const highlight = node.isBridge;
 
+    // Atenuar nodos que no tienen relación con el que está en hover
+    let globalAlpha = 1.0;
+    if (hoverNode) {
+      const neighbors = neighborMap.get(hoverNode.id) ?? new Set<string>();
+      const isNeighbor = neighbors.has(node.id);
+      if (node.id !== hoverNode.id && !isNeighbor) {
+        globalAlpha = 0.15;
+      }
+    }
+
     ctx.save();
+    ctx.globalAlpha = globalAlpha;
     ctx.fillStyle = color;
     ctx.strokeStyle = highlight ? "#f59e0b" : "#1e293b";
     ctx.lineWidth = highlight ? 3 / globalScale : 1.2 / globalScale;
@@ -680,6 +789,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
           width={dimensions.width}
           height={dimensions.height}
           graphData={graphData}
+          nodeRelSize={6}
           nodeCanvasObject={paintNode}
           nodeLabel={(node: any) =>
             `<div style="padding:4px 8px;background:#0f172a;color:#f8fafc;border-radius:6px;font-size:12px;max-width:220px">
@@ -687,19 +797,29 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
               Tipo: ${node.tipo || "-"}<br/>
               Comunidad: ${node.community ?? "-"}<br/>
               Intermediacion: ${(node.betweenness || 0).toFixed(4)}${
-                node.isBridge ? '<br/><i style="color:#facc15">Click para eliminar este puente</i>' : ''
+                node.isBridge
+                  ? '<br/><i style="color:#facc15">Click para eliminar este puente</i>'
+                  : ""
               }
             </div>`
           }
           onNodeClick={onNodeClick}
-          linkColor={() => "rgba(148, 163, 184, 0.25)"}
+          linkColor={(link: any) => {
+            const weight = Number(link.weight ?? 1);
+            const alpha = denseLayout
+              ? Math.min(0.7, 0.18 + weight / 240)
+              : Math.min(0.55, 0.14 + weight / 300);
+            return `rgba(71, 85, 105, ${alpha})`;
+          }}
           linkWidth={(link: any) =>
-            Math.max(0.3, (Number(link.weight) / 100) * 2.5)
+            Math.max(denseLayout ? 1 : 0.8, (Number(link.weight) / 100) * 4)
           }
-          cooldownTicks={120}
-          d3AlphaDecay={0.02}
-          d3VelocityDecay={0.3}
-          onEngineStop={() => fgRef.current?.zoomToFit(400, 60)}
+          warmupTicks={denseLayout ? 60 : 30}
+          cooldownTicks={denseLayout ? Math.max(260, nodeCount * 8) : 160}
+          d3AlphaDecay={denseLayout ? 0.012 : 0.018}
+          d3VelocityDecay={denseLayout ? 0.5 : 0.35}
+          onEngineStop={() => fgRef.current?.zoomToFit(450, 90)}
+          onNodeHover={setHoverNode}
         />
       ) : (
         <div className="flex items-center justify-center w-full h-full text-slate-400">
@@ -728,9 +848,31 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
           Franja
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 bg-slate-500 inline-block"></span>
+          <span className="w-2.5 h-2.5 bg-slate-500 inline-block border border-slate-700"></span>
           Medio
         </span>
+      </div>
+
+      <div className="absolute bottom-3 right-3 z-10">
+        <button
+          onClick={() => fgRef.current?.zoomToFit(400, 80)}
+          className="bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-lg shadow border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5"
+          title="Centrar la visualización"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+          </svg>
+          Resetear Vista
+        </button>
       </div>
     </div>
   );
