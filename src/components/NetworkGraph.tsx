@@ -5,14 +5,20 @@ import Graph from "graphology";
 import louvain from "graphology-communities-louvain";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
-import { Arista, CommunityInfo, GraphMetrics, Nodo } from "../types";
+import {
+  Arista,
+  BridgeRankingEntry,
+  CommunityInfo,
+  GraphMetrics,
+  Nodo,
+} from "../types";
 
 // Props del componente NetworkGraph:
 // - nodos/aristas: datos de entrada del grafo
 // - minWeight/resolution: filtros y parámetros de Louvain
 // - algorithm/targetCommunities: se usan para el modo comparativo
 // - selectedDemographic: franja demográfica seleccionada
-// - removedNodeId: nodo “eliminado” para análisis de puentes
+// - removedNodeIds: conjunto de nodos eliminados para analisis de puentes
 // - onMetricsChange: callback para enviar métricas al componente padre
 interface NetworkGraphProps {
   nodos: Nodo[];
@@ -23,7 +29,7 @@ interface NetworkGraphProps {
   targetCommunities?: number;
   onNodeClick: (node: any) => void;
   selectedDemographic?: string;
-  removedNodeId?: string;
+  removedNodeIds?: Set<string>;
   onMetricsChange?: (
     metrics: GraphMetrics,
     communities: CommunityInfo[],
@@ -343,7 +349,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
   targetCommunities = 4,
   onNodeClick,
   selectedDemographic,
-  removedNodeId,
+  removedNodeIds,
   onMetricsChange,
 }) => {
   const fgRef = useRef<any>(null);
@@ -487,9 +493,8 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
       }
     }
 
-    // Si hay un nodo eliminado, excluirlo del grafo para simular el análisis de puentes.
-    if (removedNodeId) {
-      validNodeIds.delete(removedNodeId);
+    if (removedNodeIds) {
+      removedNodeIds.forEach((id) => validNodeIds.delete(id));
     }
 
     // Agrega los nodos válidos al grafo.
@@ -528,6 +533,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
           components: 0,
           avgDegree: 0,
           topBridge: null,
+          bridgeRanking: [],
         },
         [],
       );
@@ -610,7 +616,18 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
         ? G.getNodeAttributes(topBridgeId).nombre || topBridgeId
         : "";
 
-      // Envía métricas de la configuración actual al componente padre.
+      const bridgeRanking: BridgeRankingEntry[] = sortedBridgeEntries.map(
+        ([nodeId, score]) => {
+          const attrs = G.getNodeAttributes(nodeId);
+          return {
+            nodeId,
+            name: attrs.nombre || nodeId,
+            tipo: attrs.tipo || "?",
+            score,
+          };
+        },
+      );
+
       onMetricsChange?.(
         {
           nodes: G.order,
@@ -623,6 +640,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
           topBridge: topBridgeId
             ? { name: topBridgeName, score: maxBtw }
             : null,
+          bridgeRanking,
         },
         communityInfos,
       );
@@ -670,13 +688,20 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
     minWeight,
     resolution,
     selectedDemographic,
-    removedNodeId,
+    removedNodeIds,
     onMetricsChange,
     algorithm,
     targetCommunities,
   ]);
 
-  // Dibuja cada nodo en canvas usando diferentes símbolos según su tipo.
+  useEffect(() => {
+    if (!fgRef.current) return;
+    const fg = fgRef.current;
+    fg.d3Force("charge")?.strength(-300);
+    fg.d3Force("link")?.distance(80);
+    fg.d3ReheatSimulation();
+  }, [graphData]);
+
   const paintNode = (
     node: any,
     ctx: CanvasRenderingContext2D,
@@ -832,18 +857,25 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
           <svg width="12" height="12" viewBox="0 0 12 12">
             <polygon
               points="6,0 7.8,4.2 12,4.6 8.8,7.4 9.7,12 6,9.8 2.3,12 3.2,7.4 0,4.6 4.2,4.2"
-              fill="#64748b"
+              fill="none"
+              stroke="#64748b"
+              strokeWidth="1.5"
             />
           </svg>
           Candidato
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-slate-500 inline-block"></span>
+          <span className="w-2.5 h-2.5 rounded-full border-2 border-slate-500 bg-transparent inline-block"></span>
           Departamento
         </span>
         <span className="flex items-center gap-1.5">
           <svg width="10" height="10" viewBox="0 0 10 10">
-            <polygon points="5,0 10,5 5,10 0,5" fill="#64748b" />
+            <polygon
+              points="5,0 10,5 5,10 0,5"
+              fill="none"
+              stroke="#64748b"
+              strokeWidth="1.5"
+            />
           </svg>
           Franja
         </span>
