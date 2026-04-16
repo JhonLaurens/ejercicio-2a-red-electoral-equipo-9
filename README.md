@@ -28,6 +28,7 @@
 8. [Retos innovadores](#retos-innovadores)
 9. [Datos de entrada](#datos-de-entrada)
 10. [Uso local](#uso-local)
+11. [Analisis con IA](#analisis-con-ia)
 
 ---
 
@@ -368,10 +369,46 @@ La descripcion metodologica completa del dataset esta en [electoral_README.txt](
 - Node.js 18 o superior
 - npm 9 o superior
 
-### Desarrollo
+### 1. Clonar el repositorio
+
+Si vas a trabajar desde cero, primero clona el proyecto y entra en la carpeta del repositorio:
+
+```bash
+git clone <URL-del-repositorio>
+cd ejercicio-2a-red-electoral-equipo-9
+```
+
+Si ya tienes la carpeta abierta en VS Code, puedes saltar este paso.
+
+### 2. Instalar dependencias
+
+Instala las librerias necesarias del proyecto web:
 
 ```bash
 npm install
+```
+
+Las dependencias principales que usa la aplicacion son React, Vite, TypeScript, Graphology, graphology-communities-louvain, react-force-graph-2d, PapaParse, Lucide React y @google/genai.
+
+### 3. Configurar la clave de Gemini
+
+Para activar el panel de analisis con IA, crea un archivo `.env` en la carpeta `zip/` y agrega una de estas variables:
+
+```bash
+VITE_GEMINI_API_KEY=tu_clave_de_gemini
+```
+
+Tambien es compatible con:
+
+```bash
+GEMINI_API_KEY=tu_clave_de_gemini
+```
+
+Si no configuras esta variable, la funcion de IA mostrara un mensaje de error al intentar ejecutarse.
+
+### Ejecutar en desarrollo
+
+```bash
 npm run dev
 ```
 
@@ -383,5 +420,53 @@ La URL por defecto es `http://localhost:3000`.
 npm run build
 npm run preview
 ```
+
+### API local opcional
+
+Si quieres levantar la API local de apoyo, en otra terminal ejecuta:
+
+```bash
+npm run api:start
+```
+
+### Verificar funcionamiento
+
+1. Abre la app en el navegador.
+2. Confirma que los CSV de `public/` cargan correctamente.
+3. Prueba la pestaña de analisis IA para validar que la clave de Gemini esta bien configurada.
+4. Revisa la consola si aparece algun error de entorno o dependencias.
+
+## Analisis con IA
+
+La aplicacion incluye un panel de analisis automatico con Gemini. Para que funcione en local y en Vercel debes definir una clave valida de Gemini.
+
+### Variables de entorno
+
+El codigo prioriza `VITE_GEMINI_API_KEY` y mantiene compatibilidad con `GEMINI_API_KEY` como fallback. La forma recomendada es usar una variable con el prefijo de Vite:
+
+```bash
+VITE_GEMINI_API_KEY=tu_clave_de_gemini
+```
+
+Si prefieres reutilizar una configuracion existente, tambien puedes usar:
+
+```bash
+GEMINI_API_KEY=tu_clave_de_gemini
+```
+
+### Configuracion local
+
+1. Crea un archivo `.env` en la carpeta `zip/`.
+2. Agrega `VITE_GEMINI_API_KEY` o `GEMINI_API_KEY` con tu clave real.
+3. Reinicia el servidor de desarrollo para que Vite cargue la variable.
+
+### Configuracion en Vercel
+
+1. Abre el proyecto en Vercel.
+2. Ve a `Settings` > `Environment Variables`.
+3. Agrega `VITE_GEMINI_API_KEY` con el valor de tu clave.
+4. Vuelve a desplegar el proyecto.
+
+Si la variable no esta definida, el boton de analisis IA mostrara un error indicando que falta la clave de Gemini.
 
 ---
